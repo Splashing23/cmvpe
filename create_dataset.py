@@ -20,7 +20,7 @@ for i in range(SAMPLES):
     coordinate = (random.uniform(east, west), random.uniform(south, north))
     
     sample_folder = os.path.join("dataset", f"sample_{coordinate[0]}_{coordinate[1]}")
-    os.mkdir(sample_folder)
+    os.makedirs(sample_folder)
 
     bbox_str = f'{coordinate[0] - ZOOM_LEVEL},{coordinate[1] - ZOOM_LEVEL},{coordinate[0] + ZOOM_LEVEL},{coordinate[1] + ZOOM_LEVEL}'
 
