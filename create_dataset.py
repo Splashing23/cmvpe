@@ -1,28 +1,41 @@
-import requests, mercantile, os
+import requests, os, random, shutil
+from PIL import Image
+from io import BytesIO
 
-east, south, west, north = [-95.462265, 29.676326, -95.262451, 29.815917]
+west, south, east, north = -95.462265, 29.676326, -95.262451, 29.815917
 
-# Mapillary access token -- provide your own, replace this example
 mly_key = 'MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9'
 
-# use zoom 18 size map tiles, which are quite small -- see https://mapsam.com/map to understand the sizes
-tiles = list(mercantile.tiles(east, south, west, north, 17))
-bbox_list = [mercantile.bounds(tile.x, tile.y, tile.z) for tile in tiles]
+if os.path.exists('dataset'):
+    shutil.rmtree('dataset')
+os.makedirs('dataset', exist_ok=True)
 
-# loop through each smaller bbox to request data
-for bbox in bbox_list:
-    bbox_str = str(f'{bbox.west},{bbox.south},{bbox.east},{bbox.north}')
-    url = f'https://graph.mapillary.com/images?access_token={mly_key}&bbox={bbox_str}&is_pano=true'
-    response = requests.get(url)
-    if response.status_code == 200:
-        json = response.json()
-        print(json)
-        image_ids = [obj['id'] for obj in json['data']]
+SAMPLES = 1
+ZOOM_LEVEL_18 = 0.0008 # approx
+ZOOM_LEVEL = 0.0003
+ZOOM_LEVEL_19 = 0.00004 # approx
+ZOOM_LEVEL_20 = 0.00002 # approx
 
+for i in range(SAMPLES):
+    coordinate = (random.uniform(east, west), random.uniform(south, north))
+    
+    sample_folder = os.path.join("dataset", f"sample_{coordinate[0]}_{coordinate[1]}")
+    os.mkdir(sample_folder)
 
-for image_id in image_ids:
-    image_url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=thumb_original_url'
-    response = requests.get(image_url)
-    image_data = response.json()
-    jpeg_url = image_data['thumb_original_url']
-    print(jpeg_url)
+    bbox_str = f'{coordinate[0] - ZOOM_LEVEL},{coordinate[1] - ZOOM_LEVEL},{coordinate[0] + ZOOM_LEVEL},{coordinate[1] + ZOOM_LEVEL}'
+
+    images_data_url = f'https://graph.mapillary.com/images?access_token={mly_key}&bbox={bbox_str}&is_pano=true&fields=thumb_original_url,computed_geometry'
+
+    images_data_response = requests.get(images_data_url)
+    if images_data_response.status_code == 200:
+        images_data = images_data_response.json()
+
+        for image_data in images_data['data']:
+            image_url = image_data['thumb_original_url']
+            image_id = image_data['id']
+            image_lat, image_lng = image_data['computed_geometry']['coordinates']
+            
+            image_bytes_response = requests.get(image_url)
+            image = Image.open(BytesIO(image_bytes_response.content))
+            output_path = os.path.join(sample_folder, f'panorama_{image_lat}_{image_lng}.jpeg')
+            image.convert('RGB').save(output_path, 'JPEG')

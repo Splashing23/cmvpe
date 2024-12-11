@@ -1,21 +1,21 @@
-import requests
-  
-mly_key = 'MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9'
-map_feature_id = '241757724395351'
-url = f'https://graph.mapillary.com/{map_feature_id}?access_token={mly_key}&fields=images&limit=2'
-image_ids = []
+from owslib.wms import WebMapService
 
-response = requests.get(url)
+# Connect to GIBS WMS Service
+wms = WebMapService('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi?', version='1.1.1')
 
-if response.status_code == 200: 
-    json = response.json()
-    image_ids = [obj['id'] for obj in json['images']['data']]
+# Configure request for MODIS_Terra_CorrectedReflectance_TrueColor
+img = wms.getmap(layers=['MODIS_Terra_CorrectedReflectance_TrueColor'],  # Layers
+                 srs='epsg:4326',  # Map projection
+                 bbox=(-100, 29, -90, 30),  # Bounds
+                 size=(5000, 5000),  # Image size
+                 time='2024-09-21',  # Time of data
+                 format='image/png',  # Image format
+                 transparent=True)  # Nodata transparency
 
-print(image_ids)
-# get and print the URL of each image, to access the JPEG
-# for image_id in image_ids:
-#     image_url = f'https://graph.mapillary.com/{image_id}?access_token={mly_key}&fields=thumb_original_url'
-#     response = requests.get(image_url)
-#     image_data = response.json()
-#     jpeg_url = image_data['thumb_original_url']
-#     print(jpeg_url)
+# Save output PNG to a file
+out = open('MODIS_Terra_CorrectedReflectance_TrueColor.png', 'wb')
+out.write(img.read())
+out.close()
+
+# # View image
+# Image('python-examples/MODIS_Terra_CorrectedReflectance_TrueColor.png')
