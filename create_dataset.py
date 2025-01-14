@@ -14,8 +14,8 @@ if os.path.exists('dataset'):
     shutil.rmtree('dataset')
 os.makedirs('dataset', exist_ok=False)
 
-# Set number of samples to retrieve from API (does NOT get random sample; used for debugging)
-SAMPLES = 1
+# Set number of samples to retrieve from API
+SAMPLES = 5
 
 # In meters
 R_EARTH = 6378000 
@@ -26,10 +26,12 @@ AREA = 100
 for i in range(SAMPLES):
     latitude, longitude= random.uniform(south, north), random.uniform(east, west) # Get random coordinate sample
 
-    # Get lattitude delta for bbox
+    # Get latitude delta for bbox
     lat_delta  = ((AREA / 2) / R_EARTH) * (180 / math.pi)
-    # Get longitude delta for bbox (dependent on coordinate lattitude)
+    # Get longitude delta for bbox (dependent on coordinate latitude)
     lng_delta = ((AREA / 2) / R_EARTH) * (180 / math.pi) / math.cos(latitude * (math.pi / 180))
+
+    print(lat_delta, lng_delta)
     
     # Create folder for sample
     sample_folder = os.path.join("dataset", f"sample_{latitude}_{longitude}")
