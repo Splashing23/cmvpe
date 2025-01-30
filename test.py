@@ -1,23 +1,32 @@
-import requests
+import json
 
-# URL of the API endpoint
-url = "https://gis.apfo.usda.gov/arcgis/rest/services/NAIP/USDA_CONUS_PRIME/ImageServer/exportImage"
+# Load the JSON data
+with open('colmap/pc.json', 'r') as f:
+    data = json.load(f)
 
-# Optional: Parameters for the request
-params = {
-    "bbox": "-118.2437,34.0522,-118.1437,34.1522",
-    "bboxsr": "4326",
-    "size": ",".join(map(str, [4100, 4100])),
-    "f": "json"
-}
+# Print the structure of data to inspect
+print(data)
 
-response = requests.get(url, params=params)
+# Extract camera positions (gps_position)
+camera_positions = []
+for entry in data:  # Iterate through the list
+    if 'shots' in entry:  # Check if 'shots' key exists in the current entry
+        for shot_key, shot_data in entry['shots'].items():
+            gps_position = shot_data.get('gps_position')
+            if gps_position:
+                camera_positions.append(gps_position)
 
-# Checking the status code
-if response.status_code == 200:
-    # Successful request
-    data = response.json()  # Parse the JSON response
-    print(data)
-else:
-    print(f"Error: {response.status_code}")
-    print(response.text)
+# Write the .ply file
+with open('colmap/output.ply', 'w') as f:
+    f.write("ply\n")
+    f.write("format ascii 1.0\n")
+    f.write(f"element vertex {len(camera_positions)}\n")
+    f.write("property float x\n")
+    f.write("property float y\n")
+    f.write("property float z\n")
+    f.write("end_header\n")
+    
+    for pos in camera_positions:
+        f.write(f"{pos[0]} {pos[1]} {pos[2]}\n")
+
+print("PLY file created: output.ply")
