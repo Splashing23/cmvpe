@@ -4,13 +4,13 @@ from io import BytesIO
 import numpy as np
 
 cities = {
+    "Colorado_Springs": [-104.910144, 38.726291, -104.473472, 38.997499],
+    "Miami": [-80.299499, 25.709041, -80.139198, 25.855670],
     "Houston": [-95.462265, 29.676326, -95.262451, 29.815917],
     "Seattle": [-122.459696, 47.491912, -122.224433, 47.734145],
     "Washington_DC": [-77.119759, 38.791645, -76.909393, 38.995548],
     "Detroit": [-83.287059, 42.255948, -82.910938, 42.450230],
-    "Miami": [-80.299499, 25.709041, -80.139198, 25.855670],
     "San_Francisco": [-123.173825, 37.639830, -122.281780, 37.929824],
-    "Colorado_Springs": [-104.910144, 38.726291, -104.473472, 38.997499]
 }
 
 # Mapillary API token
@@ -99,7 +99,7 @@ for city, bbox in cities.items():
             "bbox": ",".join(map(str, pano_bbox)),
             "is_pano": True,
             "fields": ",".join(
-                ["thumb_original_url", "computed_geometry", "computed_compass_angle"]
+                ["thumb_original_url", "computed_geometry", "computed_compass_angle", "camera_parameters"]
             ),
         }
 
@@ -114,6 +114,7 @@ for city, bbox in cities.items():
                 pano_url = pano_data["thumb_original_url"]
                 pano_lat, pano_lng = pano_data["computed_geometry"]["coordinates"]
                 pano_ori = pano_data["computed_compass_angle"]
+                # if "camera_parameters" in pano_data.keys(): print(pano_data["camera_parameters"])
 
                 # Save image
                 pano_bytes_response = requests.get(pano_url)
