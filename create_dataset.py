@@ -133,9 +133,9 @@ for city, bbox in cities.items():
                 pano_url = pano_data["thumb_original_url"]
                 pano_lat, pano_lng = pano_data["computed_geometry"]["coordinates"]
                 pano_ori = pano_data["computed_compass_angle"]
-                pano_rot = pano_data["computed_rotation"]
-                print(pano_rot)
-                # print(pano_data["sfm_cluster"])
+                # pano_rot = pano_data["computed_rotation"]
+                # print(pano_rot)
+                print(pano_data["sfm_cluster"])
 
                 # Save image
                 pano_bytes_response = requests.get(pano_url)
