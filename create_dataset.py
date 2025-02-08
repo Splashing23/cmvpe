@@ -1,4 +1,6 @@
 import os
+import zlib
+import json
 import random
 import shutil
 from io import BytesIO
@@ -12,7 +14,6 @@ cities = {
     "Colorado_Springs": [-104.910144, 38.726291, -104.473472, 38.997499],  # 30cm/px
     "Lorain": [-82.227505, 41.399198, -82.137412, 41.485610],  # 30cm/px
     "Southington": [-72.919021, 41.551956, -72.803413, 41.698687],  # 30cm/px
-    "West Springfield": [-72.684231, 42.086128, -72.558319, 42.142532],  # 30cm/px
     "Montpelier": [-72.700682, 44.246981, -72.556115, 44.300798],  # 30cm/px
 
     # Major cities in each 30cm/px state (generally ordered from west to east)
@@ -52,7 +53,7 @@ os.makedirs("dataset", exist_ok=False)
 os.makedirs(os.path.join("dataset", "splits"))
 
 # Set number of samples per city
-SAMPLES = 2
+SAMPLES = 10
 
 # In meters
 R_EARTH = 6378000
@@ -131,7 +132,7 @@ for city, bbox in cities.items():
             "access_token": MLY_KEY,
             "bbox": ",".join(map(str, pano_bbox)),
             "is_pano": True,
-            "limit": None,
+            "limit": 5,
             "fields": ",".join(
                 [
                     "thumb_original_url",
@@ -154,9 +155,16 @@ for city, bbox in cities.items():
                 pano_url = pano_data["thumb_original_url"]
                 pano_lat, pano_lng = pano_data["computed_geometry"]["coordinates"]
                 pano_ori = pano_data["computed_compass_angle"]
-                # pano_rot = pano_data["computed_rotation"]
+                pano_rot = pano_data["computed_rotation"]
                 # print(pano_rot)
-                print(pano_data["sfm_cluster"])
+                # print(pano_data["sfm_cluster"])
+                decompressed_data = zlib.decompress(requests.get(pano_data["sfm_cluster"]["url"]).content)
+                json_data = json.loads(decompressed_data)
+                
+                output_json_path = 'pc.json'
+                with open(output_json_path, 'w') as json_file:
+                    json.dump(json_data, json_file, indent=4)
+
 
                 # Save image
                 pano_bytes_response = requests.get(pano_url)
@@ -166,14 +174,14 @@ for city, bbox in cities.items():
                         "dataset",
                         city,
                         "panorama",
-                        f"panorama_{latitude}_{longitude}.jpg",
+                        f"panorama_{pano_lat}_{pano_lng}.jpg",
                     )
                     pano_image.convert("RGB").save(output_path, "JPEG")
 
                     with open(
-                        os.path.join("dataset", "splits", city, f"{status}_samples.txt"), "w"
+                        os.path.join("dataset", "splits", city, f"{status}_samples.txt"), "a"
                     ) as file:
-                        file.write(f"panorama_{latitude}_{longitude}.png ")
+                        file.write(f"panorama_{pano_lat}_{pano_lng}.jpg ")
                 else:
                     print(
                         f"Mapillary API (Image) Error: {pano_data_response.status_code}"
@@ -183,5 +191,5 @@ for city, bbox in cities.items():
             print(f"Mapillary API (JSON) Error: {pano_data_response.status_code}")
             print(pano_data_response.text)
 
-        with open(os.path.join("dataset", "splits", city, f"{status}_samples.txt"), "w") as file:
+        with open(os.path.join("dataset", "splits", city, f"{status}_samples.txt"), "a") as file:
             file.write(f"satellite_{latitude}_{longitude}.png\n")
