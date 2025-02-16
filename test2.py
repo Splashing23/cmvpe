@@ -1,52 +1,59 @@
-import bpy
-import json
-import mathutils
+import os
+# import zlib
+# import json
+# import random
+# import shutil
+from io import BytesIO
 
-# Load the JSON data (replace with your actual file path)
-with open('C:\\Users\\medev\\CSProjects\\cmvpe\\pc.json', 'r') as file:
-    data = json.load(file)[0]
+import numpy as np
+import requests
+from PIL import Image
 
-# Clear the existing scene
-bpy.ops.object.select_all(action='SELECT')
-bpy.ops.object.delete()
+aer_data_url = "https://gis.apfo.usda.gov/arcgis/rest/services/NAIP/USDA_CONUS_PRIME/ImageServer/exportImage"
 
-# Add the point cloud
-points = data['points']
-for point_id, point_data in points.items():
-    coordinates = point_data['coordinates']
-    color = point_data['color']
-    
-    # Create a sphere to represent the point (small scale for visualization)
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.1, location=coordinates)
-    point_obj = bpy.context.object
-    point_obj.name = f"Point_{point_id}"
-    
-    # Set the color of the point (simple material)
-    mat = bpy.data.materials.new(name=f"PointMaterial_{point_id}")
-    mat.use_nodes = True
-    bsdf = mat.node_tree.nodes["Principled BSDF"]
-    bsdf.inputs['Base Color'].default_value = (*color, 1.0)  # RGBA
-    point_obj.data.materials.append(mat)
+latitude = 42.3601
+longitude = -71.0589
 
-# Add the cameras
-shots = data['shots']
-for shot_id, shot_data in shots.items():
-    # Get the camera's position and rotation
-    translation = shot_data['translation']
-    rotation = shot_data['rotation']
-    
-    # Create a camera
-    bpy.ops.object.camera_add(location=translation)
-    camera_obj = bpy.context.object
-    camera_obj.name = f"Camera_{shot_id}"
-    
-    # Set the rotation (convert to radians)
-    camera_obj.rotation_euler = (
-        mathutils.Euler([rotation[0], rotation[1], rotation[2]], 'XYZ')
-    )
-    
-    # Set camera properties (e.g., focal length)
-    camera_obj.data.lens = 18.0  # Example focal length, adjust as needed
-    
-    # Set the camera as the active camera in the scene
-    bpy.context.scene.camera = camera_obj
+# In meters
+R_EARTH = 6378000
+
+# Side length of desired aerial image in meters (~100-125 is zoom level 18)
+SIDE_LENGTH = 125
+
+# Get latitude delta for bbox
+lat_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / 2
+# Get longitude delta for bbox (dependent on coordinate latitude)
+lng_delta = (
+    (SIDE_LENGTH / R_EARTH)
+    * (180 / np.pi)
+    / np.cos(latitude * (np.pi / 180))
+    / 2
+)
+
+aer_bbox = [
+    longitude - lng_delta,
+    latitude - lat_delta,
+    longitude + lng_delta,
+    latitude + lat_delta,
+]
+
+
+aer_params = {
+    "bbox": ",".join(map(str, aer_bbox)),
+    "bboxsr": 4326,
+    "size": ",".join(map(str, [256, 256])),
+    "adjustAspectRatio": False,
+    "format": "png32",
+    "interpolation": "RSP_NearestNeighbor",
+    "f": "image",
+}
+
+# Retrieve aerial image
+aer_bytes_response = requests.get(aer_data_url, params=aer_params)
+if aer_bytes_response.status_code == 200:
+    aer_image = Image.open(BytesIO(aer_bytes_response.content))
+    output_path = f"aerial_{latitude}_{longitude}_256.png"
+    aer_image.convert("RGB").save(output_path, "PNG")
+else:
+    print(f"NAIP API Error: {aer_bytes_response.status_code}")
+    print(aer_bytes_response.text)
