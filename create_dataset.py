@@ -48,8 +48,8 @@ cities = {
 MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
 
 # Removes existing folder and creates new one
-if os.path.exists("dataset"):
-    shutil.rmtree("dataset")
+# if os.path.exists("dataset"):
+#     shutil.rmtree("dataset")
 os.makedirs("dataset", exist_ok=True)
 os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
@@ -72,6 +72,7 @@ for city, bbox in cities.items():
     os.makedirs(os.path.join("dataset", "splits", city), exist_ok=True)
 
     for i in range(SAMPLES):
+        if i % 10 == 0: print(i)
         status = "train" if i + 1 <= TRAIN_TEST_SPLIT * SAMPLES else "test"
 
         latitude, longitude = (
@@ -148,22 +149,25 @@ for city, bbox in cities.items():
         if gl_data_response.status_code == 200:
             gl_data_dict = gl_data_response.json()
             if len(gl_data_dict["data"]) >= limit:
+                    
+                try:
+                    # Retrieve aerial image
+                    aer_bytes_response = requests.get(aer_data_url, params=aer_params)
+                    if aer_bytes_response.status_code == 200:
+                        aer_image = Image.open(BytesIO(aer_bytes_response.content))
+                        output_path = os.path.join(
+                            "dataset", city, "aerial", f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png"
+                        )
+                        aer_image.convert("RGB").save(output_path, "PNG")
+                    else:
+                        print(f"NAIP API Error: {aer_bytes_response.status_code}")
+                        print(aer_bytes_response.text)
+                        continue
 
-                # Retrieve aerial image
-                aer_bytes_response = requests.get(aer_data_url, params=aer_params)
-                if aer_bytes_response.status_code == 200:
-                    aer_image = Image.open(BytesIO(aer_bytes_response.content))
-                    output_path = os.path.join(
-                        "dataset", city, "aerial", f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png"
-                    )
-                    aer_image.convert("RGB").save(output_path, "PNG")
-                else:
-                    print(f"NAIP API Error: {aer_bytes_response.status_code}")
-                    print(aer_bytes_response.text)
+                    row = []
+                    row.append(f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png")
+                except:
                     continue
-
-                row = []
-                row.append(f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png")
 
 
                 # Retrieve ground images
@@ -171,6 +175,8 @@ for city, bbox in cities.items():
                     gl_id = gl_data['id']
 
                     # Get image url and 'computed'(adjusted) coordinates
+                    if "thumb_original_url" not in gl_data.keys():
+                        continue
                     gl_url = gl_data["thumb_original_url"]
                     # gl_lat, gl_lng = gl_data["computed_geometry"]["coordinates"]
                     # gl_ori = gl_data["computed_compass_angle"]
@@ -186,31 +192,34 @@ for city, bbox in cities.items():
                     # with open(output_json_path, 'w') as json_file:
                     #     json.dump(json_data, json_file, indent=4)
 
+                    try:
+                        # Save image
+                        gl_bytes_response = requests.get(gl_url)
+                        if gl_bytes_response.status_code == 200:
+                            gl_image = Image.open(BytesIO(gl_bytes_response.content))
+                            output_path = os.path.join(
+                                "dataset",
+                                city,
+                                "ground",
+                                f"{gl_id}.jpg",
+                            )
+                            gl_image.convert("RGB").save(output_path, "JPEG")
 
-                    # Save image
-                    gl_bytes_response = requests.get(gl_url)
-                    if gl_bytes_response.status_code == 200:
-                        gl_image = Image.open(BytesIO(gl_bytes_response.content))
-                        output_path = os.path.join(
-                            "dataset",
-                            city,
-                            "ground",
-                            f"{gl_id}.jpg",
-                        )
-                        gl_image.convert("RGB").save(output_path, "JPEG")
+                            row.append(f"{gl_id}.jpg")
+                        else:
+                            print(
+                                f"Mapillary API (Image) Error: {gl_data_response.status_code}"
+                            )
+                            print(gl_data_response.text)
 
-                        row.append(f"{gl_id}.jpg")
-                    else:
-                        print(
-                            f"Mapillary API (Image) Error: {gl_data_response.status_code}"
-                        )
-                        print(gl_data_response.text)
-
-                    gl_data.pop("thumb_original_url")
+                        gl_data.pop("thumb_original_url")
+                    except:
+                        continue
 
                 with open(os.path.join("dataset", "splits", city, f"samples.csv"), "a", newline='') as file: # {status}_
-                    writer = csv.writer(file)
-                    writer.writerow(row)
+                    if len(row) >= 1 + limit:
+                        writer = csv.writer(file)
+                        writer.writerow(row)
 
                 with open(os.path.join("dataset", "splits", city, f"ground_metadata.csv"), "a", newline='') as file: # {status}_
                     writer = csv.DictWriter(file, fieldnames=gl_fields)
