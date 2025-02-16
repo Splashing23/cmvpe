@@ -5,6 +5,7 @@ import csv
 import random
 import shutil
 from io import BytesIO
+import time
 
 import numpy as np
 import requests
@@ -71,8 +72,9 @@ for city, bbox in cities.items():
     os.makedirs(os.path.join("dataset", city, "ground"), exist_ok=True)
     os.makedirs(os.path.join("dataset", "splits", city), exist_ok=True)
 
+    start_time = time.time()
+    num_lines = 0
     for i in range(SAMPLES):
-        if i % 10 == 0: print(i)
         status = "train" if i + 1 <= TRAIN_TEST_SPLIT * SAMPLES else "test"
 
         latitude, longitude = (
@@ -124,12 +126,12 @@ for city, bbox in cities.items():
             "model",
         ]
 
-        limit = 1
+        limit = 25
         gl_params = {
             "access_token": MLY_KEY,
             "bbox": ",".join(map(str, gl_bbox)),
             "is_pano": False,
-            # "limit": limit,
+            "limit": limit,
             "fields": ",".join(gl_fields + ["thumb_original_url"]),
         }
 
@@ -148,7 +150,7 @@ for city, bbox in cities.items():
         gl_data_response = requests.get(gl_data_url, params=gl_params)
         if gl_data_response.status_code == 200:
             gl_data_dict = gl_data_response.json()
-            if len(gl_data_dict["data"]) >= limit:
+            if len(gl_data_dict["data"]) >= 1:
                     
                 try:
                     # Retrieve aerial image
@@ -217,9 +219,10 @@ for city, bbox in cities.items():
                         continue
 
                 with open(os.path.join("dataset", "splits", city, f"samples.csv"), "a", newline='') as file: # {status}_
-                    if len(row) >= 1 + limit:
+                    if len(row) >= 2:
                         writer = csv.writer(file)
                         writer.writerow(row)
+                        num_lines += 1
 
                 with open(os.path.join("dataset", "splits", city, f"ground_metadata.csv"), "a", newline='') as file: # {status}_
                     writer = csv.DictWriter(file, fieldnames=gl_fields)
@@ -228,3 +231,6 @@ for city, bbox in cities.items():
         else:
             print(f"Mapillary API (JSON) Error: {gl_data_response.status_code}")
             print(gl_data_response.text)
+        
+        if (i + 1) % 100 == 0:
+            print(f"Avg time per sample is {((time.time() - start_time) / num_lines):.4f} seconds")
