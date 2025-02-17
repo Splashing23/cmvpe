@@ -168,7 +168,8 @@ for city, bbox in cities.items():
 
                     row = []
                     row.append(f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png")
-                except:
+                except Exception as e:
+                    print(e)
                     continue
 
 
@@ -214,8 +215,10 @@ for city, bbox in cities.items():
                             )
                             print(gl_data_response.text)
 
-                        gl_data.pop("thumb_original_url")
-                    except:
+                        gl_data.pop("thumb_original_url", None)
+                    except Exception as e:
+                        gl_data.pop("thumb_original_url", None)
+                        print(e)
                         continue
 
                 with open(os.path.join("dataset", "splits", city, f"samples.csv"), "a", newline='') as file: # {status}_
