@@ -1,13 +1,11 @@
-import csv
 import os
-
+import csv
 # import zlib
 # import json
 import random
 import shutil
-import time
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor, wait
+import time
 
 import numpy as np
 import requests
@@ -19,6 +17,7 @@ cities = {
     # "Lorain": [-82.227505, 41.399198, -82.137412, 41.485610],  # 30cm/px
     # "Southington": [-72.919021, 41.551956, -72.803413, 41.698687],  # 30cm/px
     # "Montpelier": [-72.700682, 44.246981, -72.556115, 44.300798],  # 30cm/px
+
     # # Major cities in each 30cm/px state (generally ordered from west to east)
     # "Portland": [-122.836749, 45.432536, -122.472025, 45.652881], # 30cm/px OR
     # "Phoenix": [-112.335284, 33.290260, -111.926052, 33.920570], # 30cm/px AZ
@@ -34,9 +33,10 @@ cities = {
     # "Jersey City": [-74.099451, 40.673072, -74.026675, 40.745910], # 30cm/px NJ
     # "Hartford": [-72.725780, 41.724926, -72.547934, 41.819974], # 30cm/px CT
     # "Providence": [-71.419144, 41.812046, -71.279022, 41.876268], # 30cm/px RI
-    "Boston": [-71.191157, 42.227854, -70.928462, 42.398452],  # 30cm/px MA
+    "Boston": [-71.191157, 42.227854, -70.928462, 42.398452], # 30cm/px MA
     # "Burlington": [-73.297470, 44.279179, -73.186023, 44.503181], # 30cm/px VT
     # "Nashua": [-71.554596, 42.713194, -71.188291, 42.823693], # 30cm/px NH
+
     # # Major cities in 60cm/px states
     # "Houston": [-95.462265, 29.676326, -95.262451, 29.815917], # 60cm/px
     # "Seattle": [-122.459696, 47.491912, -122.224433, 47.734145], # 60cm/px
@@ -64,26 +64,6 @@ R_EARTH = 6378000
 SIDE_LENGTH = 125
 
 TRAIN_TEST_SPLIT = 0.8
-
-
-def make_request(url, image, params=None, retries=5, delay=2):
-    for attempt in range(retries):
-        try:
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code == 200:  # and response.content:
-                if image:
-                    return Image.open(BytesIO(response.content))
-                else:
-                    return response.json()
-            else:
-                print(
-                    f"Request failed with status {response.status_code} for {url} with error: {response.text}"
-                )
-                return None
-        except Exception as e:
-            # print(f"Attempt {attempt + 1} failed: {e}")
-            time.sleep(delay)
-    return None
 
 for city, bbox in cities.items():
     west, south, east, north = bbox
@@ -126,11 +106,12 @@ for city, bbox in cities.items():
             latitude + (lat_delta / 2),
         ]
 
+
         gl_data_url = "https://graph.mapillary.com/images"
 
         gl_fields = [
             "id",
-            "thumb_original_url",
+            "geometry"
             "computed_geometry",
             "compass_angle",
             "computed_compass_angle",
@@ -145,13 +126,13 @@ for city, bbox in cities.items():
             "model",
         ]
 
-        GL_SAMPLES_LIMIT = 25
+        limit = 25
         gl_params = {
             "access_token": MLY_KEY,
             "bbox": ",".join(map(str, gl_bbox)),
             "is_pano": False,
-            "limit": GL_SAMPLES_LIMIT,
-            "fields": ",".join(gl_fields),
+            "limit": limit,
+            "fields": ",".join(gl_fields + ["thumb_original_url"]),
         }
 
         aer_data_url = "https://gis.apfo.usda.gov/arcgis/rest/services/NAIP/USDA_CONUS_PRIME/ImageServer/exportImage"
@@ -166,99 +147,93 @@ for city, bbox in cities.items():
             "f": "image",
         }
 
-        # Retrieve ground-level data
-        gl_data_dict = make_request(gl_data_url, params=gl_params, image=False)
-        if gl_data_dict:
-            gl_data_dict["data"] = [
-                gl_data
-                for gl_data in gl_data_dict["data"]
-                if "thumb_original_url" in gl_data
-            ]
-            if not gl_data_dict["data"]:
-                continue
-        else:
-            continue
-
-        # Retrieve aerial image
-        aer_image = make_request(aer_data_url, params=aer_params, image=True)
-        if not aer_image:
-            continue
-
-        aer_output_path = os.path.join(
-            "dataset",
-            city,
-            "aerial",
-            f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png",
-        )
-        try:
-            aer_image.convert("RGB").save(aer_output_path, "PNG")
-        except Exception as e:
-            print(f"Aerial image bytes could not be saved into png with error: {e}")
-            continue
-
-        row = []
-        row.append(
-            f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png"
-        )
-
-        # Retrieve ground images
-        with ThreadPoolExecutor(
-            max_workers=32
-        ) as executor:  # You can adjust the number of threads as needed
-            gl_ids = []
-            futures = []
-
-            for gl_data in gl_data_dict["data"]:
-                gl_ids.append(gl_data["id"])
-                futures.append(
-                    executor.submit(
-                        make_request, gl_data["thumb_original_url"], image=True
-                    )
-                )
-                # gl_data.pop("thumb_original_url", None) # to allow for DictWriter to input gl_fields into fieldnames
-            wait(futures)
-
-            for gl_id, future in zip(gl_ids, futures):
-                gl_image = future.result()
-                if gl_image is None:
-                    continue
-
-                gl_output_path = os.path.join("dataset", city, "ground", f"{gl_id}.jpg")
+        gl_data_response = requests.get(gl_data_url, params=gl_params)
+        if gl_data_response.status_code == 200:
+            gl_data_dict = gl_data_response.json()
+            if len(gl_data_dict["data"]) >= 1:
+                    
                 try:
-                    # Save the PIL image as JPEG
-                    gl_image.convert("RGB").save(gl_output_path, "JPEG")
+                    # Retrieve aerial image
+                    aer_bytes_response = requests.get(aer_data_url, params=aer_params)
+                    if aer_bytes_response.status_code == 200:
+                        aer_image = Image.open(BytesIO(aer_bytes_response.content))
+                        output_path = os.path.join(
+                            "dataset", city, "aerial", f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png"
+                        )
+                        aer_image.convert("RGB").save(output_path, "PNG")
+                    else:
+                        print(f"NAIP API Error: {aer_bytes_response.status_code}")
+                        print(aer_bytes_response.text)
+                        continue
+
+                    row = []
+                    row.append(f"aerial_{aer_bbox[0]}_{aer_bbox[1]}_{aer_bbox[2]}_{aer_bbox[3]}.png")
                 except Exception as e:
-                    print(
-                        f"GL image bytes could not be saved into jpeg with error: {e}"
-                    )
+                    print(e)
                     continue
 
-                row.append(f"{gl_id}.jpg")
 
-        if len(row) <= 1:
-            continue
+                # Retrieve ground images
+                for gl_data in gl_data_dict["data"]:
+                    gl_id = gl_data['id']
 
-        with open(
-            os.path.join("dataset", "splits", city, "samples.csv"),
-            "a",
-            newline="",
-        ) as file:  # {status}_
-            writer = csv.writer(file)
-            writer.writerow(row)
-            num_lines += 1
+                    # Get image url and 'computed'(adjusted) coordinates
+                    if "thumb_original_url" not in gl_data.keys():
+                        continue
+                    gl_url = gl_data["thumb_original_url"]
+                    # gl_lat, gl_lng = gl_data["computed_geometry"]["coordinates"]
+                    # gl_ori = gl_data["computed_compass_angle"]
+                    # gl_rot = gl_data["computed_rotation"]
+                    # gl_type = gl_data["camera_type"]
+                    # print(gl_rot)
+                    # print(gl_data["sfm_cluster"])
 
-        with open(
-            os.path.join("dataset", "splits", city, "ground_metadata.csv"),
-            "a",
-            newline="",
-        ) as file:  # {status}_
-            writer = csv.DictWriter(file, fieldnames=gl_fields)
-            writer.writeheader()
-            writer.writerows(gl_data_dict["data"])
+                    # decompressed_data = zlib.decompress(requests.get(gl_data["sfm_cluster"]["url"]).content)
+                    # json_data = json.loads(decompressed_data)
+                    
+                    # output_json_path = 'pc.json'
+                    # with open(output_json_path, 'w') as json_file:
+                    #     json.dump(json_data, json_file, indent=4)
 
-        if (i + 1) % 1 == 0:
-            print(
-                f"Avg time per sample is {((time.time() - start_time) / num_lines):.4f} seconds"
-            )
-        # Avg time per sample is 7.9677 seconds with GL_SAMPLES_LIMIT = 3 and no parallel processing
-        #
+                    try:
+                        # Save image
+                        gl_bytes_response = requests.get(gl_url)
+                        if gl_bytes_response.status_code == 200:
+                            gl_image = Image.open(BytesIO(gl_bytes_response.content))
+                            output_path = os.path.join(
+                                "dataset",
+                                city,
+                                "ground",
+                                f"{gl_id}.jpg",
+                            )
+                            gl_image.convert("RGB").save(output_path, "JPEG")
+
+                            row.append(f"{gl_id}.jpg")
+                        else:
+                            print(
+                                f"Mapillary API (Image) Error: {gl_data_response.status_code}"
+                            )
+                            print(gl_data_response.text)
+
+                        gl_data.pop("thumb_original_url", None)
+                    except Exception as e:
+                        gl_data.pop("thumb_original_url", None)
+                        print(e)
+                        continue
+
+                with open(os.path.join("dataset", "splits", city, f"samples.csv"), "a", newline='') as file: # {status}_
+                    if len(row) >= 2:
+                        writer = csv.writer(file)
+                        writer.writerow(row)
+                        num_lines += 1
+
+                with open(os.path.join("dataset", "splits", city, f"ground_metadata.csv"), "a", newline='') as file: # {status}_
+                    writer = csv.DictWriter(file, fieldnames=gl_fields)
+                    writer.writeheader()
+                    writer.writerows(gl_data_dict["data"])
+        else:
+            print(f"Mapillary API (JSON) Error: {gl_data_response.status_code}")
+            print(gl_data_response.text)
+        
+        if (i + 1) % 2 == 0:
+            print(f"Avg time per sample is {((time.time() - start_time) / num_lines):.4f} seconds")
