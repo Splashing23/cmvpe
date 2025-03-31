@@ -212,7 +212,7 @@ def make_request(
         if stop_event.is_set():
             return
         try:
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=5)
             if save_to is None:
                 return response.json()
             else:
