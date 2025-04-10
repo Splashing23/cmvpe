@@ -91,7 +91,7 @@ def task(
 
     # Retrieve ground-level data
     gl_data_dict = make_request(stop_event, url=gl_data_url, params=gl_params)
-    if gl_data_dict:
+    if gl_data_dict and "data" in gl_data_dict.keys():
         gl_data_dict["data"] = [
             gl_data
             for gl_data in gl_data_dict["data"]
