@@ -92,6 +92,8 @@ def task(
     # Retrieve ground-level data
     gl_data_dict = make_request(stop_event, url=gl_data_url, params=gl_params)
     if gl_data_dict:
+        if "data" not in gl_data_dict.keys():
+            return
         gl_data_dict["data"] = [
             gl_data
             for gl_data in gl_data_dict["data"]
@@ -219,8 +221,8 @@ def make_request(
     url: str,
     save_to: list = None,
     params: dict = None,
-    retries: int = 4,
-    delay: int = 1,
+    retries: int = 5,
+    delay: int = 4,
 ):
     for attempt in range(retries):
         if stop_event.is_set():
@@ -287,7 +289,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
     # Set number of samples per city
-    SAMPLES = 10
+    SAMPLES = 50
 
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
@@ -339,6 +341,34 @@ if __name__ == "__main__":
             initargs=(lock, num_lines),
         ) as pool:
             pool.starmap(task, args)
+
+        # with mp.Pool(
+        #     processes=12,
+        #     initializer=init_worker,
+        #     initargs=(lock, num_lines),
+        # ) as pool:
+        #     arg_gen = infinite_args_generator()
+        #     active_jobs = []
+
+        #     try:
+        #         while True:
+        #             # Submit a batch of jobs to keep the pool busy
+        #             while len(active_jobs) < 12:
+        #                 args = next(arg_gen)
+        #                 job = pool.apply_async(task, args=args)
+        #                 active_jobs.append(job)
+
+        #             # Remove finished jobs
+        #             active_jobs = [job for job in active_jobs if not job.ready()]
+        #             time.sleep(0.1)  # Avoid tight loop
+
+        #     except KeyboardInterrupt:
+        #         print("Gracefully stopping...")
+        #         pool.terminate()
+        #     finally:
+        #         pool.close()
+        #         pool.join()
+        
         
         print(f"Completed {city}!")
     
