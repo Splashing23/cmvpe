@@ -25,17 +25,18 @@ def task(
     R_EARTH,
     SIDE_LENGTH,
 ):
-    latitude, longitude = (
-        random.uniform(south, north),
+    longitude, latitude = (
         random.uniform(east, west),
+        random.uniform(south, north),
     )  # Get uniform random coordinate sample
 
-    # Get latitude delta for bbox
-    lat_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / 2
     # Get longitude delta for bbox (dependent on coordinate latitude)
     lng_delta = (
         (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / np.cos(latitude * (np.pi / 180)) / 2
     )
+    # Get latitude delta for bbox
+    lat_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / 2
+    
 
     aer_bbox = [
         longitude - lng_delta,
@@ -56,21 +57,16 @@ def task(
     gl_fields = [
         "id",
         "thumb_original_url",
-        "computed_geometry",
-        "compass_angle",
-        "computed_compass_angle",
-        "computed_rotation",
-        "computed_altitude",
-        "height",
         "captured_at",
+        "height",
+        "computed_altitude",
+        "computed_compass_angle",
+        "computed_geometry",
+        "computed_rotation",
         "camera_parameters",
-        "camera_type",
-        "sequence",
-        "make",
-        "model",
     ]
 
-    GL_SAMPLES_LIMIT = 25
+    GL_SAMPLES_LIMIT = 10
     gl_params = {
         "access_token": MLY_KEY,
         "bbox": ",".join(map(str, gl_bbox)),
@@ -122,9 +118,27 @@ def task(
     # Retrieve ground images
     gl_images = []
     gl_ids = []
+    gl_lngs = []
+    gl_lats = []
     threads = []
     for gl_data in gl_data_dict["data"]:
+        gl_data["computed_longitude"] = gl_data["computed_geometry"]["coordinates"][0]
+        gl_data["computed_latitude"] = gl_data["computed_geometry"]["coordinates"][1]
+        gl_data.pop("computed_geometry")
+
+        gl_data["computed_rot_x"] = gl_data["computed_rotation"][0]
+        gl_data["computed_rot_y"] = gl_data["computed_rotation"][1]
+        gl_data["computed_rot_z"] = gl_data["computed_rotation"][2]
+        gl_data.pop("computed_rotation")
+
+        gl_data["focal_length"] = gl_data["camera_parameters"][0]
+        gl_data["radial_k1"] = gl_data["camera_parameters"][1]
+        gl_data["radial_k2"] = gl_data["camera_parameters"][2]
+        gl_data.pop("camera_parameters")
+
         gl_ids.append(gl_data["id"])
+        gl_lngs.append(gl_data["computed_longitude"])
+        gl_lats.append(gl_data["computed_latitude"])
         threads.append(
             threading.Thread(
                 target=make_request,
@@ -135,7 +149,7 @@ def task(
                 },
             )
         )
-        # gl_data.pop("thumb_original_url", None) # to remove url from metadata
+        gl_data.pop("thumb_original_url")
 
     for t in threads:
         t.start()
@@ -164,11 +178,11 @@ def task(
     for t in threads:
         t.join()
 
-    for gl_id, gl_image in zip(gl_ids, gl_images):
+    for gl_id, gl_lng, gl_lat, gl_image in zip(gl_ids, gl_lngs, gl_lats, gl_images):
         if gl_image is None:
             return
 
-        gl_output_path = os.path.join("dataset", city, "ground", f"{gl_id}.jpg")
+        gl_output_path = os.path.join("dataset", city, "ground", f"{gl_id}_{gl_lng}_{gl_lat}.jpg")
         try:
             gl_image.convert("RGB").save(gl_output_path, "JPEG")
         except Exception as e:
@@ -186,14 +200,14 @@ def task(
             writer.writerow(row)
             num_lines.value += 1
 
-        if write_header.value:
+        file_exists = os.path.exists(metadata_path)
+        if not file_exists:
             with open(metadata_path, mode="w", newline="") as file:
-                writer = csv.DictWriter(file, fieldnames=gl_fields)
+                writer = csv.DictWriter(file, fieldnames=gl_data_dict["data"][0].keys())
                 writer.writeheader()
-            write_header.value = False
 
         with open(metadata_path, "a", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=gl_fields)
+            writer = csv.DictWriter(file, fieldnames=gl_data_dict["data"][0].keys())
             writer.writerows(gl_data_dict["data"])
 
         print(
@@ -226,12 +240,10 @@ def make_request(
     else:
         return None
 
-def init_worker(shared_lock, shared_write_header, shared_num_lines):
+def init_worker(shared_lock, shared_num_lines):
     global lock
-    global write_header
     global num_lines
     lock = shared_lock
-    write_header = shared_write_header
     num_lines = shared_num_lines
 
 
@@ -243,16 +255,16 @@ if __name__ == "__main__":
         # "Southington": [-72.919021, 41.551956, -72.803413, 41.698687],  # 30cm/px
         # "Montpelier": [-72.700682, 44.246981, -72.556115, 44.300798],  # 30cm/px
         # # Major cities in each 30cm/px state (generally ordered from west to east)
-        # "Portland": [-122.836749, 45.432536, -122.472025, 45.652881], # 30cm/px OR
+        "Portland": [-122.836749, 45.432536, -122.472025, 45.652881], # 30cm/px OR
         # "Phoenix": [-112.335284, 33.290260, -111.926052, 33.920570], # 30cm/px AZ
-        # "Denver": [-105.109817, 39.614431, -104.600303, 39.914246], # 30cm/px CO
+        "Denver": [-105.109817, 39.614431, -104.600303, 39.914246], # 30cm/px CO
         # "Oklahoma City": [-97.921387, 35.291649, -97.181938, 35.730099], # 30cm/px OK
         # "Des Moines": [-93.734146, 41.518050, -93.457256, 41.682130], # 30cm/px IA
         # "Little Rock": [-92.472519, 34.693828, -92.262406, 34.877798], # 30cm/px AR
-        # "New Orleans": [-90.199402, 29.933013, -89.805378, 30.112536], # 30cm/px LA
+        "New Orleans": [-90.199402, 29.933013, -89.805378, 30.112536], # 30cm/px LA
         # "Cleveland": [-81.766778, 41.290711, -81.669137, 41.499320], # 30cm/px OH
-        # "Miami": [-80.299499, 25.709041, -80.139198, 25.855670], # 30cm/px FL
-        # "Baltimore": [-76.715707, 39.272081, -76.516857, 39.400711], # 30cm/px MD
+        "Miami": [-80.299499, 25.709041, -80.139198, 25.855670], # 30cm/px FL
+        "Baltimore": [-76.715707, 39.272081, -76.516857, 39.400711], # 30cm/px MD
         # "Dover": [-75.563591, 39.133555, -75.291482, 39.225296], # 30cm/px DE
         # "Jersey City": [-74.099451, 40.673072, -74.026675, 40.745910], # 30cm/px NJ
         # "Hartford": [-72.725780, 41.724926, -72.547934, 41.819974], # 30cm/px CT
@@ -275,7 +287,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
     # Set number of samples per city
-    SAMPLES = 25000
+    SAMPLES = 10
 
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
@@ -302,7 +314,6 @@ if __name__ == "__main__":
         samples_path = os.path.join("dataset", "splits", city, "samples.csv")
         metadata_path = os.path.join("dataset", "splits", city, "ground_metadata.csv")
 
-        write_header = mp.Value("b", True)
         lock = mp.Lock()
 
         args = (
@@ -323,8 +334,12 @@ if __name__ == "__main__":
         )
 
         with mp.Pool(
-            processes=10,
+            processes=12,
             initializer=init_worker,
-            initargs=(lock, write_header, num_lines),
+            initargs=(lock, num_lines),
         ) as pool:
             pool.starmap(task, args)
+        
+        print(f"Completed {city}!")
+    
+    print("Dataset complete!")
