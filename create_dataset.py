@@ -28,13 +28,11 @@ def task(
     longitude, latitude = (
         random.uniform(east, west),
         random.uniform(south, north),
-    )  # Get uniform random coordinate sample
+    )
 
-    # Get longitude delta for bbox (dependent on coordinate latitude)
     lng_delta = (
         (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / np.cos(latitude * (np.pi / 180)) / 2
     )
-    # Get latitude delta for bbox
     lat_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / 2
 
     aer_bbox = [
@@ -65,12 +63,14 @@ def task(
         "camera_parameters",
     ]
 
-    GL_SAMPLES_LIMIT = 10
+    # Set the min and max number of ground-level images per sample
+    GL_SAMPLES_MIN = 1
+    GL_SAMPLES_MAX = 10
     gl_params = {
         "access_token": MLY_KEY,
         "bbox": ",".join(map(str, gl_bbox)),
         "is_pano": False,
-        "limit": GL_SAMPLES_LIMIT,
+        "limit": GL_SAMPLES_MAX,
         "fields": ",".join(gl_fields),
     }
 
@@ -88,20 +88,29 @@ def task(
 
     stop_event = threading.Event()
 
-    # Retrieve ground-level data
     gl_data_dict = make_request(stop_event, url=gl_data_url, params=gl_params)
     if gl_data_dict and "data" in gl_data_dict.keys():
+        # Set the min number of ground-level images per sample (1)
+        if len(gl_data_dict["data"]) < GL_SAMPLES_MIN:
+            print("Response didn't return enough ground-level images for the sample")
+            return
+
+        before = len(gl_data_dict["data"])
         gl_data_dict["data"] = [
             gl_data
             for gl_data in gl_data_dict["data"]
-            if "thumb_original_url" in gl_data
+            if all(field in gl_data for field in gl_fields)
         ]
-        if not gl_data_dict["data"]:
-            return
+        diff = len(gl_data_dict["data"]) - before
+        if diff > 0:
+            print(
+                f"Lost {diff} ground-level images due to missing metadata fields"
+            )
+
     else:
+        print("Ground-level samples request returned empty")
         return
 
-    # Retrieve aerial image
     aer_image = []
     aer_thread = threading.Thread(
         target=make_request,
@@ -114,12 +123,12 @@ def task(
     )
     aer_thread.start()
 
-    # Retrieve ground images
     gl_images = []
     gl_ids = []
     gl_lngs = []
     gl_lats = []
     threads = []
+
     for gl_data in gl_data_dict["data"]:
         gl_data["computed_longitude"] = gl_data["computed_geometry"]["coordinates"][0]
         gl_data["computed_latitude"] = gl_data["computed_geometry"]["coordinates"][1]
@@ -156,6 +165,7 @@ def task(
     aer_thread.join()
     aer_image = aer_image[0]
     if not aer_image:
+        print("make_request return None for aerial image")
         stop_event.set()
         return
 
@@ -179,7 +189,8 @@ def task(
 
     for gl_id, gl_lng, gl_lat, gl_image in zip(gl_ids, gl_lngs, gl_lats, gl_images):
         if gl_image is None:
-            return
+            print("make_request returned None for ground-level image")
+            continue
 
         gl_output_path = os.path.join(
             "dataset", city, "ground", f"{gl_id}_{gl_lng}_{gl_lat}.jpg"
@@ -188,11 +199,12 @@ def task(
             gl_image.convert("RGB").save(gl_output_path, "JPEG")
         except Exception as e:
             print(f"GL image bytes could not be saved into jpeg with error: {e}")
-            return
+            continue
 
         row.append(f"{gl_id}.jpg")
 
-    if len(row) <= 1:
+    if len(row) < 1 + GL_SAMPLES_MIN:
+        print("Ground-level images exist but minimum threshold wasn't successfully saved")
         return
 
     with lock:
@@ -212,7 +224,7 @@ def task(
             writer.writerows(gl_data_dict["data"])
 
         print(
-            f"Avg time per sample is {((time.time() - start_time) / num_lines.value):.4f} seconds"
+            f"Sample saved successfully! Average time per sample is {((time.time() - start_time) / num_lines.value):.4f} seconds"
         )
 
 
@@ -222,13 +234,13 @@ def make_request(
     save_to: list = None,
     params: dict = None,
     retries: int = 4,
-    delay: int = 1,
+    delay: int = 2,
 ):
     for attempt in range(retries):
         if stop_event.is_set():
             return
         try:
-            response = requests.get(url, params=params, timeout=5)
+            response = requests.get(url, params=params, timeout=6)
             if save_to is None:
                 return response.json()
             else:
@@ -239,6 +251,7 @@ def make_request(
             time.sleep(delay)
     if save_to:
         save_to.append(None)
+        return
     else:
         return None
 
@@ -256,7 +269,7 @@ if __name__ == "__main__":
         # "Colorado Springs": [-104.985348, 38.6739578, -104.665348, 38.9939578],  # 30cm/px
         # "Montpelier": [-72.7351208, 44.1002164, -72.4151208, 44.4202164],  # 30cm/px
 
-        # # Major cities in each 30cm/px state (generally ordered from west to east)
+        # # Major cities in each 30cm/px state (generally ordered from west to east) (FOCUS ON THESE)
         # "Portland": [-70.4172642, 43.4992687, -70.0972642, 43.8192687],  # 30cm/px OR
         # "Phoenix": [-112.234141, 33.2884367, -111.914141, 33.6084367],  # 30cm/px AZ
         # "Denver": [-105.144862, 39.5792364, -104.824862, 39.8992364],  # 30cm/px CO
@@ -265,7 +278,7 @@ if __name__ == "__main__":
         # "Little Rock": [-92.5215905,34.6256657,-92.1506554,34.8218226],  # 30cm/px AR
         # "New Orleans": [-90.1399307,29.8654809,-89.6251763,30.1994687],  # 30cm/px LA
         # "Cleveland": [-81.8536772, 41.3396574, -81.5336772, 41.6596574],  # 30cm/px OH
-        # "Miami": [-80.35362, 25.6141728, -80.03362, 25.9341728],  # 30cm/px FL
+        "Miami": [-80.35362, 25.6141728, -80.03362, 25.9341728],  # 30cm/px FL
         # "Baltimore": [-76.770759, 39.1308816, -76.450759, 39.4508816],  # 30cm/px MD
         # "Dover": [-71.0339761, 43.0381117, -70.7139761, 43.3581117],  # 30cm/px DE
         # "Jersey City": [-74.1166865,40.661622,-74.0206386,40.7689376],  # 30cm/px NJ
@@ -282,15 +295,14 @@ if __name__ == "__main__":
         # "Detroit": [-83.2066403, 42.1715509, -82.8866403, 42.4915509],  # 60cm/px
         # "San Francisco": [-122.579906, 37.6190262, -122.259906, 37.9390262],  # 60cm/px
     }
-    
-    # Removes existing folder and creates new one
+
     if os.path.exists("dataset"):
         shutil.rmtree("dataset")
     os.makedirs("dataset", exist_ok=True)
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
     # Set number of samples per city
-    SAMPLES = 100
+    SAMPLES = 2
 
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
