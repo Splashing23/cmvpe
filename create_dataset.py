@@ -30,9 +30,7 @@ def task(
         random.uniform(south, north),
     )
 
-    lng_delta = (
-        (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / np.cos(latitude * (np.pi / 180)) / 2
-    )
+    lng_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / np.cos(latitude * (np.pi / 180)) / 2
     lat_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / 2
 
     aer_bbox = [
@@ -291,7 +289,7 @@ if __name__ == "__main__":
         # # Major cities in 60cm/px states
         # "Houston": [-95.5276974, 29.5989382, -95.2076974, 29.9189382],  # 60cm/px
         # "Seattle": [-122.490062, 47.4438321, -122.170062, 47.7638321],  # 60cm/px
-        # "Washington D.C.": [-77.1197949,38.7916303,-76.909366,38.995968],  # most likely 60cm/px
+        # "Washington D.C.": [-77.1197949, 38.7916303, -76.909366, 38.995968],  # most likely 60cm/px
         # "Detroit": [-83.2066403, 42.1715509, -82.8866403, 42.4915509],  # 60cm/px
         # "San Francisco": [-122.579906, 37.6190262, -122.259906, 37.9390262],  # 60cm/px
     }
@@ -302,7 +300,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
     # Set number of samples per city
-    SAMPLES = 2
+    SAMPLES = 10
 
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
