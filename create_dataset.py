@@ -199,7 +199,7 @@ def task(
             print(f"GL image bytes could not be saved into jpeg with error: {e}")
             continue
 
-        row.append(f"{gl_id}.jpg")
+        row.append(f"{gl_id}_{gl_lng}_{gl_lat}.jpg")
 
     if len(row) < 1 + GL_SAMPLES_MIN:
         print("Ground-level images exist but minimum threshold wasn't successfully saved")
