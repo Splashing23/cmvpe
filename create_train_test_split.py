@@ -35,35 +35,39 @@ cities = {
 
 TRAIN_TEST_SPLIT = 0.8
 
-N_REGIONS_SIDE = 5
+N_REGIONS_SIDE = 10
 
-test = [(i, j) for i in range(N_REGIONS_SIDE) for j in range(N_REGIONS_SIDE)]
-random.shuffle(test)
-test = set(test[:int(len(test) * TRAIN_TEST_SPLIT]))
+regions = [(i, j) for i in range(N_REGIONS_SIDE) for j in range(N_REGIONS_SIDE)]
+random.shuffle(regions)
+train = set(regions[:int(len(regions) * TRAIN_TEST_SPLIT)])
 
-print(test)
+for city in os.listdir(os.path.join("dataset", "splits")):
+    unused_count = 0
+    city_splits_path = os.path.join("dataset", "splits", city)
+    with open(os.path.join(city_splits_path, "samples.csv"), "r") as f_samples, open(os.path.join(city_splits_path, "train.csv"), "w") as f_train, open(os.path.join(city_splits_path, "test.csv"), "w") as f_test:
+        long_unit = (cities[city][2] - cities[city][0]) / N_REGIONS_SIDE
+        lat_unit = cities[city][3] - cities[city][1] / N_REGIONS_SIDE
+        lines = f_samples.readlines()
+        for line in lines[1:]:
+            aer_image_name = line.strip().split(',')[0]
+            bbox = aer_image_name[:-4].split("_")[1:]
+            bbox = [float(edge) for edge in bbox]
 
-# for city in os.listdir(os.path.join("dataset", "splits")):
-#     unused_count = 0
-#     city_splits_path = os.path.join("dataset", "splits", city)
-#     with open(os.path.join(city_splits_path, "samples.csv"), "r") as f_samples, open(os.path.join(city_splits_path, "train.csv"), "w") as f_train, open(os.path.join(city_splits_path, "test.csv"), "w") as f_test:
-#         long_unit = (cities[city][2] - cities[city][0]) / N_REGIONS_SIDE
-#         lat_unit = cities[city][3] - cities[city][1] / N_REGIONS_SIDE
-#         lines = f_samples.readlines()
-#         for line in lines[1:]:
-#             aer_image_name = line.strip().split(',')[0]
-#             bbox = aer_image_name.split("_")[1:]
-#             longitude = bbox[2] - bbox[0]
-#             latitude = bbox[3] - bbox[1]
-#             left_region = int((bbox[0] - cities[city][0]) / long_unit)
-#             right_region = int((bbox[2] - cities[city][0]) / long_unit)
-#             top_region = int((bbox[1] - cities[city][1]) / lat_unit)
-#             bottom_region = int((bbox[3] - cities[city][1]) / lat_unit)
-#             if left_region != right_region or top_region != bottom_region:
-#                 unused_count += 1
-#                 continue
-#             else:
-#                 if (left_region, top_region) in test:
-#                     f_test.write(line)
-#                 else:
-#                     f_train.write(line)
+            long_gl_diff = (bbox[2] - bbox[0]) / 4
+            lat_gl_diff = (bbox[3] - bbox[1]) / 4
+
+            left_region = int((bbox[0] + long_gl_diff - cities[city][0]) / long_unit)
+            bottom_region = int((bbox[3] + lat_gl_diff - cities[city][1]) / lat_unit)
+            right_region = int((bbox[2] - long_gl_diff - cities[city][0]) / long_unit)
+            top_region = int((bbox[1] - lat_gl_diff - cities[city][1]) / lat_unit)
+            
+            if left_region != right_region or top_region != bottom_region:
+                unused_count += 1
+                continue
+            else:
+                if (left_region, top_region) in train:
+                    f_train.write(line)
+                else:
+                    f_test.write(line)
+
+    print(f"Unused percentage in {city}: {unused_count / len(lines[1:]) * 100:.2f}%")
