@@ -56,6 +56,7 @@ def task(
         "height",
         "computed_altitude",
         "computed_compass_angle",
+        "geometry",
         "computed_geometry",
         "computed_rotation",
         "camera_parameters",
@@ -276,7 +277,9 @@ if __name__ == "__main__":
         # "Little Rock": [-92.5215905,34.6256657,-92.1506554,34.8218226],  # 30cm/px AR
         # "New Orleans": [-90.1399307,29.8654809,-89.6251763,30.1994687],  # 30cm/px LA
         # "Cleveland": [-81.8536772, 41.3396574, -81.5336772, 41.6596574],  # 30cm/px OH
+
         "Miami": [-80.35362, 25.6141728, -80.03362, 25.9341728],  # 30cm/px FL
+
         # "Baltimore": [-76.770759, 39.1308816, -76.450759, 39.4508816],  # 30cm/px MD
         # "Dover": [-71.0339761, 43.0381117, -70.7139761, 43.3581117],  # 30cm/px DE
         # "Jersey City": [-74.1166865,40.661622,-74.0206386,40.7689376],  # 30cm/px NJ
@@ -347,7 +350,7 @@ if __name__ == "__main__":
         )
 
         with mp.Pool(
-            processes=12,
+            processes=20,
             initializer=init_worker,
             initargs=(lock, num_lines),
         ) as pool:
