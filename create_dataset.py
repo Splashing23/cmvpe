@@ -255,7 +255,7 @@ def make_request(
                 save_to.append(Image.open(BytesIO(response.content)))
                 return
         except Exception as e:
-            print(f"Attempt {attempt + 1} failed: {e}")
+            # print(f"Attempt {attempt + 1} failed: {e}")
             time.sleep(delay)
     return
 
@@ -306,7 +306,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
     # Set number of samples per city
-    SAMPLES = 20
+    SAMPLES = 100
 
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
