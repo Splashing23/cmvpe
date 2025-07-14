@@ -62,15 +62,13 @@ def task(
         "geometry",
         "computed_geometry",
 
-        "rotation",
         "computed_rotation",
-
         "camera_parameters",
     ]
 
     # Set the min and max number of ground-level images per sample
     GL_SAMPLES_MIN = 1
-    GL_SAMPLES_MAX = 5
+    GL_SAMPLES_MAX = 25
     gl_params = {
         "access_token": MLY_KEY,
         "bbox": ",".join(map(str, gl_bbox)),
@@ -95,17 +93,17 @@ def task(
 
     gl_data_dict = make_request(stop_event, url=gl_data_url, params=gl_params)
     if gl_data_dict and "data" in gl_data_dict.keys():
-        # Set the min number of ground-level images per sample (1)
-        if len(gl_data_dict["data"]) < GL_SAMPLES_MIN:
-            # print("Response didn't return enough ground-level images for the sample")
-            return False
-
-        before = len(gl_data_dict["data"])
         gl_data_dict["data"] = [
             gl_data
             for gl_data in gl_data_dict["data"]
             if all(field in gl_data for field in gl_fields)
         ]
+        if len(gl_data_dict["data"]) < GL_SAMPLES_MIN:
+            # print("Response didn't return enough ground-level images for the sample")
+            return False
+
+        # before = len(gl_data_dict["data"])
+        
         # diff = len(gl_data_dict["data"]) - before
         # if diff > 0:
         #     print(f"Lost {diff} ground-level images due to missing metadata fields")
@@ -136,11 +134,6 @@ def task(
         gl_data["computed_latitude"] = gl_data["computed_geometry"]["coordinates"][1]
         gl_data["computed_longitude"] = gl_data["computed_geometry"]["coordinates"][0]
         gl_data.pop("computed_geometry")
-
-        gl_data["rot_x"] = gl_data["rotation"][0]
-        gl_data["rot_y"] = gl_data["rotation"][1]
-        gl_data["rot_z"] = gl_data["rotation"][2]
-        gl_data.pop("rotation")
 
         gl_data["computed_rot_x"] = gl_data["computed_rotation"][0]
         gl_data["computed_rot_y"] = gl_data["computed_rotation"][1]
@@ -187,6 +180,7 @@ def task(
     try:
         aer_image.convert("RGB").save(aer_output_path, "PNG")
     except Exception as e:
+        stop_event.set()
         return False
 
     row = []
@@ -206,7 +200,7 @@ def task(
         try:
             gl_image.convert("RGB").save(gl_output_path, "JPEG")
         except Exception as e:
-            print(f"GL image bytes could not be saved into jpeg with error: {e}")
+            # print(f"GL image bytes could not be saved into jpeg with error: {e}")
             continue
         
         row.append(f"{gl_id}.jpg")
@@ -221,7 +215,7 @@ def task(
                 os.remove(file_path)
             except FileNotFoundError:
                 pass
-        print(f"Sample failed to meet minimum threshold of {GL_SAMPLES_MIN} ground-level image(s)")
+        # print(f"Sample failed to meet minimum threshold of {GL_SAMPLES_MIN} ground-level image(s)")
         return False
 
     with lock:
@@ -248,7 +242,7 @@ def make_request(
     save_to: Optional[list] = None,
     params: Optional[dict] = None,
     retries: int = 4,
-    delay: int = 2,
+    delay: int = 1,
 ):
     for attempt in range(retries):
         if stop_event.is_set():
@@ -262,8 +256,6 @@ def make_request(
                 return
         except Exception as e:
             print(f"Attempt {attempt + 1} failed: {e}")
-            print(url)
-            print(response.content)
             time.sleep(delay)
     return
 
@@ -314,7 +306,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
     # Set number of samples per city
-    SAMPLES = 10
+    SAMPLES = 20
 
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
