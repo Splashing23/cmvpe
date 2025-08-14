@@ -52,6 +52,7 @@ def task(
         "thumb_original_url",
         "captured_at",
         "height",
+        "sequence",
 
         "altitude",
         "computed_altitude",
