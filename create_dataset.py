@@ -10,24 +10,80 @@ from io import BytesIO
 import numpy as np
 import requests
 from PIL import Image
-from typing import Optional
+from typing import Optional, List, Tuple
 from tqdm import tqdm
+
+
+def generate_grid_samples(west: float, south: float, east: float, north: float, 
+                         side_length: float, overlap_ratio: float = 0.5) -> List[Tuple[float, float]]:
+    """
+    Generate grid-based sample points with specified overlap.
+    
+    Args:
+        west, south, east, north: Bounding box coordinates
+        side_length: Side length of each sample area in meters
+        overlap_ratio: Overlap ratio between neighboring samples (0.0 to 1.0)
+    
+    Returns:
+        List of (latitude, longitude) tuples for sample centers
+    """
+    # Convert side length from meters to degrees
+    # Approximate conversion: 1 degree latitude ≈ 111,000 meters
+    # 1 degree longitude ≈ 111,000 * cos(latitude) meters
+    center_lat = (south + north) / 2
+    center_lng = (west + east) / 2
+    
+    # Calculate step size to achieve desired overlap
+    # If samples have side_length and overlap_ratio, then step = side_length * (1 - overlap_ratio)
+    step_size_meters = side_length * (1 - overlap_ratio)
+    
+    # Convert step size to degrees
+    lat_step = step_size_meters / 111000  # 1 degree latitude ≈ 111,000 meters
+    lng_step = step_size_meters / (111000 * np.cos(np.radians(center_lat)))  # Adjust for longitude
+    
+    # Generate grid points
+    samples = []
+    current_lat = south
+    while current_lat <= north:
+        current_lng = west
+        while current_lng <= east:
+            samples.append((current_lat, current_lng))
+            current_lng += lng_step
+        current_lat += lat_step
+    
+    return samples
+
+
+def count_grid_samples(west: float, south: float, east: float, north: float, 
+                       side_length: float, overlap_ratio: float = 0.5) -> int:
+    """
+    Count how many grid sample points would be generated for the given bbox and parameters
+    without materializing all coordinates.
+    """
+    center_lat = (south + north) / 2
+    step_size_meters = side_length * (1 - overlap_ratio)
+    lat_step = step_size_meters / 111000
+    lng_step = step_size_meters / (111000 * np.cos(np.radians(center_lat)))
+
+    if lat_step <= 0 or lng_step <= 0:
+        return 0
+
+    n_lat = int(np.floor((north - south) / lat_step)) + 1
+    n_lng = int(np.floor((east - west) / lng_step)) + 1
+    return max(0, n_lat) * max(0, n_lng)
 
 
 def task(
     city,
-    west,
-    south,
-    east,
-    north,
+    latitude,
+    longitude,
     samples_path,
     metadata_path,
     MLY_KEY,
     R_EARTH,
     SIDE_LENGTH,
 ):
-    latitude, longitude = random.uniform(south, north), random.uniform(east, west)
-
+    # Use the provided latitude and longitude instead of random sampling
     lat_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / 2
     lng_delta = (SIDE_LENGTH / R_EARTH) * (180 / np.pi) / np.cos(latitude * (np.pi / 180)) / 2
     
@@ -247,18 +303,18 @@ def make_request(
 ):
     for attempt in range(retries):
         if stop_event.is_set():
-            return
+            return None
         try:
             response = requests.get(url, params=params, timeout=6)
             if save_to is None:
                 return response.json()
             else:
                 save_to.append(Image.open(BytesIO(response.content)))
-                return
+                return None
         except Exception as e:
             # print(f"Attempt {attempt + 1} failed: {e}")
             time.sleep(delay)
-    return
+    return None
 
 
 def init_worker(shared_lock, shared_num_lines):
@@ -268,7 +324,8 @@ def init_worker(shared_lock, shared_num_lines):
     num_lines = shared_num_lines
 
 
-if __name__ == "__main__":
+def main():
+    # Sourced from OSM data:https://www.geoapify.com/download-all-the-cities-towns-villages/ - more specifically: https://www.geoapify.com/data-share/localities/us.zip
     cities = {
         # Dense ground mapillary data
         # "Colorado Springs": [-104.985348, 38.6739578, -104.665348, 38.9939578],  # 30cm/px
@@ -279,19 +336,23 @@ if __name__ == "__main__":
         # "Phoenix": [-112.234141, 33.2884367, -111.914141, 33.6084367],  # 30cm/px AZ
         # "Denver": [-105.144862, 39.5792364, -104.824862, 39.8992364],  # 30cm/px CO
         # "Oklahoma City": [-97.830948,35.290695,-97.124718,35.6748662],  # 30cm/px OK
+        # "Tulsa": [-96.1527516,35.9963122,-95.8327516,36.3163122] # 30cm/px OK
         # "Des Moines": [-93.7091411,41.4796389,-93.4936911,41.6589106],  # 30cm/px IA
         # "Little Rock": [-92.5215905,34.6256657,-92.1506554,34.8218226],  # 30cm/px AR
+        # "Fayetteville": [-94.2978481,35.9893558,-94.0267113,36.1489329] # 30cm/px AR
         # "New Orleans": [-90.1399307,29.8654809,-89.6251763,30.1994687],  # 30cm/px LA
         # "Cleveland": [-81.8536772, 41.3396574, -81.5336772, 41.6596574],  # 30cm/px OH
         "Miami": [-80.35362, 25.6141728, -80.03362, 25.9341728],  # 30cm/px FL
-        # "Baltimore": [-76.770759, 39.1308816, -76.450759, 39.4508816],  # 30cm/px MD
+        "Baltimore": [-76.770759, 39.1308816, -76.450759, 39.4508816],  # 30cm/px MD
         # "Dover": [-71.0339761, 43.0381117, -70.7139761, 43.3581117],  # 30cm/px DE
+        # "Wilmington": [-75.706589,39.5859468,-75.386589,39.9059468] # 30cm/px DE
         # "Jersey City": [-74.1166865,40.661622,-74.0206386,40.7689376],  # 30cm/px NJ
         # "Hartford": [-72.8508547, 41.604582, -72.5308547, 41.924582],  # 30cm/px CT
         # "Providence": [-71.5728343, 41.6639891, -71.2528343, 41.9839891],  # 30cm/px RI
         # "Boston": [-71.220511, 42.1954334, -70.900511, 42.5154334],  # 30cm/px MA
         # "Burlington": [-73.372906, 44.3161601, -73.052906, 44.6361601],  # 30cm/px VT
         # "Nashua": [-71.6277032, 42.6056251, -71.3077032, 42.9256251],  # 30cm/px NH
+        # "Keene": [-72.4384264,42.773597,-72.1184264,43.093597] # 30cm/px NH
 
         # # Major cities in 60cm/px states
         # "Houston": [-95.5276974, 29.5989382, -95.2076974, 29.9189382],  # 60cm/px
@@ -306,9 +367,6 @@ if __name__ == "__main__":
     os.makedirs("dataset", exist_ok=True)
     os.makedirs(os.path.join("dataset", "splits"), exist_ok=True)
 
-    # Set number of samples per city
-    SAMPLES = 100
-
     # Mapillary API token
     MLY_KEY = "MLY|9042214512506386|3607fa048afce1dfb774b938cbf843f9"
 
@@ -318,16 +376,29 @@ if __name__ == "__main__":
     # Side length of desired aerial image in meters (~100-125 is zoom level 18)
     SIDE_LENGTH = 125
 
+    # Overlap ratio between neighboring samples (0.5 = 50% overlap)
+    OVERLAP_RATIO = 0.5
+
     num_lines = mp.Value("i", 0)
 
-    total_target_samples = len(cities) * SAMPLES
+    # Pre-compute total number of planned grid samples across all cities for the progress denominator
+    total_target_samples = 0
+    for bbox in cities.values():
+        west, south, east, north = bbox
+        total_target_samples += count_grid_samples(west, south, east, north, SIDE_LENGTH, OVERLAP_RATIO)
+
     total_successful_samples = 0
 
     with tqdm(total=total_target_samples, desc="Dataset progress", unit="sample") as pbar:
         for city, bbox in cities.items():
-            tqdm.write(f"Processing {city}...")
+            tqdm.write(f"\nProcessing {city}...")
 
             west, south, east, north = bbox
+            
+            # Generate grid-based sample points
+            sample_points = generate_grid_samples(west, south, east, north, SIDE_LENGTH, OVERLAP_RATIO)
+            tqdm.write(f"Generated {len(sample_points)} grid sample points for {city}")
+            
             os.makedirs(os.path.join("dataset", city), exist_ok=True)
             os.makedirs(os.path.join("dataset", city, "aerial"), exist_ok=True)
             os.makedirs(os.path.join("dataset", city, "ground"), exist_ok=True)
@@ -343,33 +414,59 @@ if __name__ == "__main__":
 
             NUM_PROCESSES = 12
             
-            with mp.Pool(processes=NUM_PROCESSES, initializer=init_worker, initargs=(lock, num_lines)) as pool:
-                while successful_samples < SAMPLES:
-                    # Submit new tasks if we have room
-                    while len(active_tasks) < NUM_PROCESSES + 2 and successful_samples + len(active_tasks) < SAMPLES:
-                        task_args = (
-                            city, west, south, east, north, samples_path, metadata_path,
-                            MLY_KEY, R_EARTH, SIDE_LENGTH,
-                        )
-                        async_result = pool.apply_async(task, task_args)
-                        active_tasks.append(async_result)
+            # Create a progress bar for this specific city
+            with tqdm(total=len(sample_points), desc=f"{city} progress", unit="sample", leave=False) as city_pbar:
+                with mp.Pool(processes=NUM_PROCESSES, initializer=init_worker, initargs=(lock, num_lines)) as pool:
+                    # Process sample points with proper task management to prevent overloading
+                    sample_index = 0
                     
-                    # Check for completed tasks
-                    completed_tasks = []
-                    for async_result in active_tasks:
-                        if async_result.ready():
-                            result = async_result.get()
-                            if result is True:
-                                successful_samples += 1
-                                total_successful_samples += 1
+                    while sample_index < len(sample_points) or active_tasks:
+                        # Submit new tasks if we have room and more samples to process
+                        while (len(active_tasks) < NUM_PROCESSES + 2 and 
+                               sample_index < len(sample_points)):
+                            lat, lng = sample_points[sample_index]
+                            task_args = (
+                                city, lat, lng, samples_path, metadata_path,
+                                MLY_KEY, R_EARTH, SIDE_LENGTH,
+                            )
+                            async_result = pool.apply_async(task, task_args)
+                            active_tasks.append(async_result)
+                            sample_index += 1
+                        
+                        # Check for completed tasks
+                        completed_tasks = []
+                        for async_result in active_tasks:
+                            if async_result.ready():
+                                result = async_result.get()
+                                if result is True:
+                                    successful_samples += 1
+                                    total_successful_samples += 1
                                 pbar.update(1)  # Update overall progress
-                            completed_tasks.append(async_result)
-                    
-                    # Remove completed tasks
-                    for completed in completed_tasks:
-                        active_tasks.remove(completed)
-                    
-                    time.sleep(0.1)  # Small delay to avoid busy waiting
+                                city_pbar.update(1)  # Update city progress
+                                completed_tasks.append(async_result)
+                        
+                        # Remove completed tasks
+                        for completed in completed_tasks:
+                            active_tasks.remove(completed)
+                        
+            # Calculate success percentage
+            success_percentage = (successful_samples / len(sample_points)) * 100 if len(sample_points) > 0 else 0
+            
+            # Calculate city bounding box area in square kilometers
+            # Convert degrees to approximate kilometers
+            lat_span_km = (north - south) * 111  # 1 degree latitude ≈ 111 km
+            lng_span_km = (east - west) * 111 * np.cos(np.radians((south + north) / 2))  # Adjust for longitude
+            city_area_km2 = lat_span_km * lng_span_km
+            
+            # Calculate success density (successful samples per square kilometer)
+            success_density = successful_samples / city_area_km2 if city_area_km2 > 0 else 0
+            
+            tqdm.write(f"Completed {city} with {successful_samples}/{len(sample_points)} successful samples!")
+            tqdm.write(f"  Success rate: {success_percentage:.4f}%")
+            tqdm.write(f"  Success density: {success_density:.4f} samples/km²")
+            tqdm.write(f"  City area: {city_area_km2:.4f} km²")
+    print(f"Dataset complete! Total successful samples: {total_successful_samples}")
 
-            tqdm.write(f"Completed {city}!")
-    print("Dataset complete!")
+
+if __name__ == "__main__":
+    main()
