@@ -323,7 +323,7 @@ if __name__ == "__main__":
     total_target_samples = len(cities) * SAMPLES
     total_successful_samples = 0
 
-    with tqdm(total=total_target_samples, desc="Dataset progress", unit="sample") as pbar:
+    with tqdm(total=total_target_samples, desc="Dataset progress", unit="successful samples") as pbar:
         for city, bbox in cities.items():
             tqdm.write(f"Processing {city}...")
 
@@ -369,7 +369,17 @@ if __name__ == "__main__":
                     for completed in completed_tasks:
                         active_tasks.remove(completed)
                     
-                    time.sleep(0.1)  # Small delay to avoid busy waiting
+            # Remove duplicate metadata rows
+            if os.path.exists(metadata_path):
+                with open(metadata_path, mode="r+", newline="") as file:
+                    reader = list(csv.reader(file))
+                    saved = set(tuple(row) for row in reader[1:])
+                    file.seek(0)
+                    
+                    writer = csv.writer(file)
+                    writer.writerow(reader[0])
+                    writer.writerows(saved)
+                    file.truncate()
 
             tqdm.write(f"Completed {city}!")
     print("Dataset complete!")
