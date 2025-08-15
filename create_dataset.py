@@ -342,7 +342,7 @@ def main():
         # "Fayetteville": [-94.2978481,35.9893558,-94.0267113,36.1489329] # 30cm/px AR
         # "New Orleans": [-90.1399307,29.8654809,-89.6251763,30.1994687],  # 30cm/px LA
         # "Cleveland": [-81.8536772, 41.3396574, -81.5336772, 41.6596574],  # 30cm/px OH
-        "Miami": [-80.35362, 25.6141728, -80.03362, 25.9341728],  # 30cm/px FL
+        "Miami": [-80.35362, 25.6141728, -80.34, 25.62],# -80.03362, 25.9341728],  # 30cm/px FL
         "Baltimore": [-76.770759, 39.1308816, -76.450759, 39.4508816],  # 30cm/px MD
         # "Dover": [-71.0339761, 43.0381117, -70.7139761, 43.3581117],  # 30cm/px DE
         # "Wilmington": [-75.706589,39.5859468,-75.386589,39.9059468] # 30cm/px DE
@@ -415,7 +415,7 @@ def main():
             NUM_PROCESSES = 12
             
             # Create a progress bar for this specific city
-            with tqdm(total=len(sample_points), desc=f"{city} progress", unit="sample", leave=False) as city_pbar:
+            with tqdm(total=len(sample_points), desc=f"{city} progress", unit="samples", leave=False) as city_pbar:
                 with mp.Pool(processes=NUM_PROCESSES, initializer=init_worker, initargs=(lock, num_lines)) as pool:
                     # Process sample points with proper task management to prevent overloading
                     sample_index = 0
@@ -448,7 +448,19 @@ def main():
                         # Remove completed tasks
                         for completed in completed_tasks:
                             active_tasks.remove(completed)
+                    
+                # Remove duplicate metadata rows
+                if os.path.exists(metadata_path):
+                    with open(metadata_path, mode="r+", newline="") as file:
+                        reader = list(csv.reader(file))
+                        saved = set(tuple(row) for row in reader[1:])
+                        file.seek(0)
                         
+                        writer = csv.writer(file)
+                        writer.writerow(reader[0])
+                        writer.writerows(saved)
+                        file.truncate()
+
             # Calculate success percentage
             success_percentage = (successful_samples / len(sample_points)) * 100 if len(sample_points) > 0 else 0
             
