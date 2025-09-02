@@ -7,8 +7,6 @@ import geopandas as gpd
 from shapely.geometry import box
 import numpy as np
 
-
-
 cities = {
     # Dense ground mapillary data
     "Colorado Springs": [-104.985348, 38.6739578, -104.665348, 38.9939578],  # 30cm/px
@@ -55,11 +53,58 @@ test = set(regions[-int(len(regions) * TEST_SPLIT):])
 heat_data = set()
 
 for city in os.listdir(os.path.join("dataset", "splits")):
-    unused_count = 0
     city_splits_path = os.path.join("dataset", "splits", city)
-    if not os.path.exists(os.path.join(city_splits_path, "train.csv")):
+
+    if not os.path.exists(os.path.join(city_splits_path, "comp_samples.csv")):
+        lost_count = 0
+        total_count = 0
+
+        lost_samples = 0
+        total_samples = 0
+
         with (
-            open(os.path.join(city_splits_path, "samples.csv"), "r") as f_samples, 
+            open(os.path.join(city_splits_path, "samples.csv"), "r") as f_samples,
+            open(os.path.join(city_splits_path, "comp_samples.csv"), "w") as f_comp_samples, 
+        ):
+            df = pd.read_csv(os.path.join(city_splits_path, "ground_metadata.csv"))
+            for line in f_samples:
+                line_list = line[:-1].split(",")
+
+                bbox = line_list[0][:-4].split("_")[1:]
+                bbox = [float(value) for value in bbox]
+                lat_diff = bbox[2] - bbox[0]
+                lng_diff = bbox[3] - bbox[1]
+                bbox = [
+                    bbox[0] + (lng_diff / 4),
+                    bbox[1] + (lat_diff / 4),
+                    bbox[2] - (lng_diff / 4),
+                    bbox[3] - (lat_diff / 4),
+                ]
+                new_line_list = []
+                for gl in line_list[1:]:
+                    id_num = int(gl[:-4])
+                    lat = df.loc[df["id"] == id_num, "computed_latitude"].values[0]
+                    lng = df.loc[df["id"] == id_num, "computed_longitude"].values[0]
+
+                    if bbox[0] < lng < bbox[2] and bbox[1] < lat < bbox[3]:
+                        new_line_list.append(gl)
+                    else:
+                        lost_count += 1
+                    total_count += 1
+                total_samples += 1
+                if new_line_list:
+                    f_comp_samples.write(line_list[0] + "," + ",".join(new_line_list) + "\n")
+                else:
+                    lost_samples += 1
+
+        print(f"Lost gl images from comp filter in {city}: {lost_count} / {total_count} = {lost_count / total_count * 100:.2f}%")
+        print(f"Lost samples from comp filter in {city}: {lost_samples} / {total_samples} = {lost_samples / total_samples * 100:.2f}%")
+    
+
+    if not os.path.exists(os.path.join(city_splits_path, "train.csv")):
+        unused_count = 0
+        with (
+            open(os.path.join(city_splits_path, "comp_samples.csv"), "r") as f_samples, 
             open(os.path.join(city_splits_path, "train.csv"), "w") as f_train, 
             open(os.path.join(city_splits_path, "validation.csv"), "w") as f_val,
             open(os.path.join(city_splits_path, "test.csv"), "w") as f_test,
@@ -67,7 +112,7 @@ for city in os.listdir(os.path.join("dataset", "splits")):
             long_unit = (cities[city][2] - cities[city][0]) / N_REGIONS_SIDE
             lat_unit = (cities[city][3] - cities[city][1]) / N_REGIONS_SIDE
             lines = f_samples.readlines()
-            for line in lines[1:]:
+            for line in lines:
                 aer_image_name = line.strip().split(',')[0]
                 bbox = aer_image_name[:-4].split("_")[1:]
                 bbox = [float(edge) for edge in bbox]
@@ -98,7 +143,7 @@ for city in os.listdir(os.path.join("dataset", "splits")):
                 else:
                     unused_count += 1
 
-        print(f"Unused percentage in {city}: {unused_count / len(lines[1:]) * 100:.2f}%")
+        print(f"Lost samples from creating splits in {city}: {unused_count} / {len(lines)} = {unused_count / len(lines[1:]) * 100:.2f}%")
 
         grid_cells = []
         grid_values = []
@@ -159,21 +204,5 @@ for city in os.listdir(os.path.join("dataset", "splits")):
         folium.LayerControl().add_to(m)
 
         m.save(os.path.join(city_splits_path, "grid_cells.html"))
-    
-    if not os.path.exists(os.path.join(city_splits_path, "comp_train.csv")):
 
-        with (
-            open(os.path.join(city_splits_path, "train.csv"), "r") as f_train,
-            open(os.path.join(city_splits_path, "validation.csv"), "r") as f_val,
-            open(os.path.join(city_splits_path, "test.csv"), "r") as f_test,
-            open(os.path.join(city_splits_path, "comp_train.csv"), "w") as f_comp_train, 
-            open(os.path.join(city_splits_path, "comp_validation.csv"), "w") as f_comp_val,
-            open(os.path.join(city_splits_path, "comp_test.csv"), "w") as f_comp_test,
-        ):
-            df = pd.read_csv(os.path.join(city_splits_path, "ground_metadata.csv"))
-            for line in f_train:
-                line_list = line.split("'")
-                bbox = line_list[0][:-3].split
-                new_line_list = []
-                for gl in line_list[1:]:
-                    if 
+                    
